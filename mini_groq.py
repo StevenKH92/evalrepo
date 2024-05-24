@@ -1,58 +1,22 @@
-import groq
-from groq import Groq
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import httpx
+import os
+from dotenv import load_dotenv
 
-app = FastAPI()
+load_dotenv()
 
-# Configure the default for all requests:
-client = Groq(
-    api_key=os.environ.get("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"),
-    # 20 seconds (default is 1 minute)
-    timeout=20.0,
-    max_retries=1,
-)
+GROQ_API_URL = "https://api.groq.com/v1/endpoint"  # Remplacez par l'URL correcte de l'API Groq
+GROQ_API_TOKEN = os.getenv("GROQ_API_TOKEN")
 
-class Prompt(BaseModel):
-    prompt: str
+async def call_groq_api(prompt: str):
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    data = {
+        "prompt": prompt
+    }
 
-@app.get("/status")
-async def get_status():
-    return {"message": "OK"}
-
-@app.post("/chat")
-async def post_chat(prompt: Prompt):
-    try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a helpful assistant.",
-                },
-                {
-                    "role": "user",
-                    "content": prompt.prompt,
-                },
-            ],
-            model="mixtral-8x7b-32768",
-        )
-        return {"response": chat_completion.choices[0].message.content}
-
-    except groq.APIConnectionError as e:
-        print("The server could not be reached")
-        print(e.__cause__)  # an underlying Exception, likely raised within httpx.
-        raise HTTPException(status_code=500, detail="API Connection Error")
-
-    except groq.RateLimitError as e:
-        print("A 429 status code was received; we should back off a bit.")
-        raise HTTPException(status_code=429, detail="Rate Limit Exceeded")
-
-    except groq.APIStatusError as e:
-        print("Another non-200-range status code was received")
-        print(e.status_code)
-        print(e.response)
-        raise HTTPException(status_code=e.status_code, detail="API Status Error")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    async with httpx.AsyncClient() as client:
+        response = await client.post(GROQ_API_URL, json=data, headers=headers)
+        response.raise_for_status()  # Cela lèvera une exception pour les réponses d'erreur HTTP
+        return response.json()
